@@ -47,9 +47,17 @@ class Seq2SeqEncoder(Encoder):
     def __init__(self, src_vocab_size, embed_size, num_hiddens, num_layers, dropout=0, **kwargs):
         super(Seq2SeqEncoder, self).__init__(**kwargs)
         # 嵌入层(D,E)
-        self.embedding = nn.Embedding(src_vocab_size, embed_size)
+        self.embedding = nn.Embedding(
+            num_embeddings=src_vocab_size, 
+            embedding_dim=embed_size
+        )
         # 循环神经网络层(E,H,L)
-        self.rnn = nn.GRU(embed_size, num_hiddens, num_layers, dropout=dropout)
+        self.rnn = nn.GRU(
+            input_size=embed_size, 
+            hidden_size=num_hiddens, 
+            num_layers=num_layers, 
+            dropout=dropout
+        )
         # 没有输出层
     
     # 定义前向传播
@@ -73,11 +81,22 @@ class Seq2SeqDecoder(Decoder):
     def __init__(self, tgt_vocab_size, embed_size, num_hiddens, num_layers, dropout=0, **kwargs):
         super(Seq2SeqDecoder, self).__init__(**kwargs)
         # 嵌入层(D,E)
-        self.embedding = nn.Embedding(tgt_vocab_size, embed_size)
+        self.embedding = nn.Embedding(
+            num_embeddings=tgt_vocab_size, 
+            embedding_dim=embed_size
+        )
         # 循环神经网络层(E+H,H,L)
-        self.rnn = nn.GRU(embed_size + num_hiddens, num_hiddens, num_layers, dropout=dropout)
+        self.rnn = nn.GRU(
+            input_size=embed_size + num_hiddens, 
+            hidden_size=num_hiddens, 
+            num_layers=num_layers, 
+            dropout=dropout
+        )
         # 输出层(H,D)
-        self.dense = nn.Linear(num_hiddens, tgt_vocab_size)
+        self.dense = nn.Linear(
+            in_features=num_hiddens, 
+            out_features=tgt_vocab_size
+        )
 
 
     # 初始化解码器状态
@@ -128,7 +147,7 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
     net.train()
     # 定义优化器和损失函数
     optimizer = torch.optim.Adam(net.parameters(), lr=lr)
-    loss = MaskedSoftmaxCELoss() # 交叉熵损失函数，用于多分类问题
+    loss = MaskedSoftmaxCELoss(ignore_index=tgt_vocab['<pad>']) # 交叉熵损失函数，用于多分类问题
 
     # 训练
     for epoch in range(num_epochs):
@@ -152,7 +171,7 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
             # 2.训练，执行强制教学
             outputs, _ = net(src_inputs, tgt_teach) # outputs(B,T,D)
             # 3.计算损失
-            l = loss(outputs, tgt_inputs, tgt_valid_len) #压缩 T,l(B)
+            l = loss(outputs, tgt_inputs) #压缩 T,l(B)
             l = l.sum() # 压缩 B,l(1)
             # 4.反向传播
             l.backward()
@@ -167,42 +186,37 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
         print(f'epoch {(epoch + 1):3d}/{num_epochs}, loss {metric[0] / metric[1]:.3f}, {metric[1] / timer.stop():.1f} 词元/秒 {str(device)}')
 
 
-# 序列掩膜
-# weight_mat(B,T)
-# tgt_valid_len(B)
-def sequence_mask(weight_mat, tgt_valid_len, value=0):
-    maxlen = weight_mat.size(1)
-    # index_mat(T)
-    index_mat = torch.arange((maxlen),dtype=torch.float32, device=weight_mat.device)
-    # index_mat(1,T)
-    index_mat = index_mat.unsqueeze(0)
-    # valid_mat(B,1)
-    valid_mat = tgt_valid_len.unsqueeze(1)
-    # 广播,得到掩膜mask(B,T)
-    mask = index_mat < valid_mat
-    # 应用掩膜,将掩膜中后面的位置填充为0
-    weight_mat[~mask] = value
-    return weight_mat
-
 # 带遮蔽的softmax交叉熵损失函数
 class MaskedSoftmaxCELoss(nn.CrossEntropyLoss):
-    # input(B,T,D)
-    # target(B,T)
-    # tgt_valid_len(B)
-    # 计算每个位置的权重，将掩膜中后面的位置填充为0
-    def forward(self, input, target, tgt_valid_len):
-        # weight_mat(B,T)
-        weight_mat = torch.ones_like(target)
-        # 创建序列掩膜，weight_mat(B,T)
-        weight_mat = sequence_mask(weight_mat, tgt_valid_len)
-        # self.reduction='none'
-        # 计算交叉熵损失，unweighted_loss(B,T)
-        unweighted_loss = super(MaskedSoftmaxCELoss, self).forward(input.permute(0, 2, 1), target)
-        # 应用序列掩膜，将掩膜中后面的位置的损失设为0
-        # weighted_loss(B,T)
-        weighted_loss = (unweighted_loss * weight_mat)
-        # 计算每个句子的平均损失,weighted_loss(B)
-        weighted_loss = weighted_loss.mean(dim=1) # 压缩 T,weighted_loss(B)
+    def __init__(self, ignore_index=0, **kwargs):  # 默认设为 0，适配你的 padding
+        super(MaskedSoftmaxCELoss, self).__init__(
+            ignore_index=ignore_index, # 忽略目标中值等于 ignore_index 的位置
+            reduction='none',  # 保持逐元素计算
+            **kwargs
+        )
+
+    def forward(self, input, target):
+        # 计算逐位置损失，无效位置（ignore_index）损失为 0
+        # input 需要 (B, D, T)，target 是 (B, T)
+        # input(B,T,D)->(B,D,T)
+        unweighted_loss = super().forward(input.permute(0, 2, 1), target)  # (B, T)
+
+        # 创建有效位置掩码：target 中不等于 ignore_index 的位置为 1
+        # mask: (B, T)
+        mask = (target != self.ignore_index).float()
+
+        # 对每个样本，计算有效损失总和
+        # loss_sum: (B,)
+        loss_sum = (unweighted_loss * mask).sum(dim=1)
+
+        # 获取每个样本的有效 token 数量（避免除零）
+        # valid_token_count: (B,)
+        valid_token_count = mask.sum(dim=1).clamp(min=1)  # 至少为1，防止除零
+
+        # 计算每个句子的平均损失
+        # weighted_loss: (B,)
+        weighted_loss = loss_sum / valid_token_count
+
         return weighted_loss
 
 # 定义预测函数，端到端预测
@@ -294,6 +308,7 @@ def main():
     # 5.预测
     engs = ['go .', "i lost .", 'he\'s calm .', 'i\'m home .']
     fras = ['va !', 'j\'ai perdu .', 'il est calme .', 'je suis chez moi .']
+    print('----------------------------------------------------------------')
     for eng, fra in zip(engs, fras):
         translation, attention_weight_seq = predict_seq2seq(net, eng, src_vocab, tgt_vocab, num_steps, device)
         print(f'{eng} => {translation}, bleu {bleu(translation, fra, k=2):.3f}')

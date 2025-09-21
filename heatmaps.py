@@ -35,6 +35,7 @@ def show_heatmaps(matrices, xlabel, ylabel, titles=None, figsize=(5, 5), cmap='R
             # col_matrix.detach().numpy()：将 PyTorch 张量从计算图中分离并转换为 NumPy 数组
             # cmap=cmap：使用指定的颜色映射来绘制热图
             # vmin=0, vmax=1：设置颜色映射的最小值和最大值为 0 和 1，确保所有值都映射到该范围内
+            # 返回的 pcm 是一个 QuadMesh 对象，用于后续的颜色条添加
             pcm = col_axes.imshow(col_matrix.detach().numpy(), cmap=cmap, vmin=0, vmax=1)
             # 只在最后一行设置 x 轴标签
             if i == num_rows - 1:
@@ -45,7 +46,11 @@ def show_heatmaps(matrices, xlabel, ylabel, titles=None, figsize=(5, 5), cmap='R
             # 如果提供了标题，设置子图标题
             if titles is not None:
                 col_axes.set_title(titles[i,j])
-    # 为所有子图添加颜色条
+    
+    # 为所有子图添加一个共享的颜色条
+    # pcm: 最后一个子图上调用 imshow 返回的 QuadMesh 对象，用于获取颜色映射信息
+    # ax=axes: 指定颜色条关联的子图集合，即所有子图共享该颜色条
+    # shrink=0.6: 将颜色条的长度缩小为原始长度的 60%，以适配整体布局
     fig.colorbar(pcm, ax=axes, shrink=0.6)
     # 显示图形
     plt.show(block=True)

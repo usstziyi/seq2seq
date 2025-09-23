@@ -33,10 +33,10 @@ class AdditiveAttention(nn.Module):
     """加性注意力"""
     def __init__(self, key_size, query_size, num_hiddens, dropout, **kwargs):
         super(AdditiveAttention, self).__init__(**kwargs)
-        # (Qd,H)
-        self.W_q = nn.Linear(query_size, num_hiddens, bias=False)
         # (Kd,H)
         self.W_k = nn.Linear(key_size, num_hiddens, bias=False)
+        # (Qd,H)
+        self.W_q = nn.Linear(query_size, num_hiddens, bias=False)
         # (H,1)
         self.w_v = nn.Linear(num_hiddens, 1, bias=False)
         self.dropout = nn.Dropout(dropout)
@@ -47,7 +47,7 @@ class AdditiveAttention(nn.Module):
     # valid_lens(B)
     def forward(self, queries, keys, values, valid_lens):
         # (B,Q,Qd)*(Qd,H)->(B,Q,H)
-        queries = self.W_q(queries)
+        queries = self.W_q(queries) # 一次处理Q步推理
         # (B,K,Kd)*(Kd,H)->(B,K,H)
         keys = self.W_k(keys)
         # queries(B,Q,H)->(B,Q,1,H)
@@ -125,7 +125,7 @@ def test_additive_attention():
     model = AdditiveAttention(key_size=2, query_size=20, num_hiddens=8, dropout=0.1)
     model.eval()
     # queries(B,Q,Qd)=(2,1,20)
-    # keys(B,K,Qd)=(2,10,2)
+    # keys(B,K,Kd)=(2,10,2)
     # values(B,K,V)=(2,10,4)
     # valid_lens(B)=(2,)
     # outputs(B,Q,V)=(2,1,4)

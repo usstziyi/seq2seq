@@ -4,9 +4,12 @@ from torch import nn
 from d2l import torch as d2l
 import heatmaps as hm
 
+"""
+K=G
+"""
 
-# score(B,Q,K)
-# valid_lens(B,):batch中不同样本的有效长度不同，每个查询共用一个key 查询库
+# score(B,Q,G)
+# valid_lens(B):batch中不同样本的有效长度不同，每个查询共用一个key 查询库
 # valid_lens(B,Q):batch中不同样本的有效长度不同，每个查询有自己独立的 key 查询库，所以需要加一个维度来存储不同的 key 查询库大小
 def masked_softmax(score, valid_lens):
     shape = score.shape
@@ -19,21 +22,22 @@ def masked_softmax(score, valid_lens):
         else:
             # valid_lens(B,Q) -> (B*Q)
             valid_lens = valid_lens.reshape(-1) # 先内后外->样本1,样本2,样本3
-        # score(B,Q,K) -> (B*Q,K)->样本1,样本2,样本3
+        # score(B,Q,G) -> (B*Q,G)->样本1,样本2,样本3
         # valid_lens(B*Q,)->样本1,样本2,样本3
-        # score(B*Q,K)->样本1,样本2,样本3
+        # score(B*Q,G)->样本1,样本2,样本3
         score = d2l.sequence_mask(score.reshape(-1, score.shape[-1]), valid_lens, value=-1e6)
-        # (B*Q,K)->(B,Q,K)
+        # (B*Q,G)->(B,Q,G)
         score = score.reshape(shape)
-        # return(B,Q,K)
+        # return(B,Q,G)
         return nn.functional.softmax(score, dim=-1)
 
 # 加性注意力网络
+# T = Q
 class AdditiveAttention(nn.Module):
     """加性注意力"""
     def __init__(self, key_size, query_size, num_hiddens, dropout, **kwargs):
         super(AdditiveAttention, self).__init__(**kwargs)
-        # (Kd,H)
+        # (Gd,H)
         self.W_k = nn.Linear(key_size, num_hiddens, bias=False)
         # (Qd,H)
         self.W_q = nn.Linear(query_size, num_hiddens, bias=False)
@@ -42,36 +46,36 @@ class AdditiveAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     # queries(B,Q,Qd)
-    # keys(B,K,Kd)
-    # values(B,K,V)
+    # keys(B,G,Gd)
+    # values(B,G,V)
     # valid_lens(B)
     def forward(self, queries, keys, values, valid_lens):
         # (B,Q,Qd)*(Qd,H)->(B,Q,H)
         queries = self.W_q(queries) # 一次处理Q步推理
-        # (B,K,Kd)*(Kd,H)->(B,K,H)
+        # (B,G,Gd)*(Gd,H)->(B,G,H)
         keys = self.W_k(keys)
         # queries(B,Q,H)->(B,Q,1,H)
-        # keys(B,K,H)->(B,1,K,H)
-        # features(B,Q,K,H)
+        # keys(B,G,H)->(B,1,G,H)
+        # features(B,Q,G,H)
         features = queries.unsqueeze(2) + keys.unsqueeze(1) # 加性
-        # features(B,Q,K,H)->(B,Q,K,H)
+        # features(B,Q,G,H)->(B,Q,G,H)
         features = torch.tanh(features)
-        # (B,Q,K,H)*(H,1)->(B,Q,K,1)
+        # (B,Q,G,H)*(H,1)->(B,Q,G,1)
         scores = self.w_v(features) 
-        # scores(B,Q,K,1)->(B,Q,K)
-        scores = scores.squeeze(-1) # 关键点：去掉最后一个维度，变成(B,Q,K)
+        # scores(B,Q,G,1)->(B,Q,G)
+        scores = scores.squeeze(-1) # 关键点：去掉最后一个维度，变成(B,Q,G)
         
         # --------------------------------------
 
-        # scores(B,Q,K)
+        # scores(B,Q,G)
         # valid_lens(B)
-        # attention_weights(B,Q,K)
+        # attention_weights(B,Q,G)
         self.attention_weights = masked_softmax(scores, valid_lens)
-        # attention_weights(B,Q,K)
-        # dropped_weights(B,Q,K)
+        # attention_weights(B,Q,G)
+        # dropped_weights(B,Q,G)
         dropped_weights = self.dropout(self.attention_weights)
-        # dropped_weights(B,Q,K)
-        # values(B,K,V)
+        # dropped_weights(B,Q,G)
+        # values(B,G,V)
         # outputs(B,Q,V)
         outputs = torch.bmm(dropped_weights, values)
         return outputs

@@ -57,7 +57,8 @@ class Seq2SeqEncoder(Encoder):
             input_size=embed_size, 
             hidden_size=num_hiddens, 
             num_layers=num_layers, 
-            dropout=dropout
+            dropout=dropout,
+            batch_first=False
         )
         # 没有输出层
     
@@ -70,7 +71,8 @@ class Seq2SeqEncoder(Encoder):
         inputs = self.embedding(inputs)
         # inputs(T,B,E)
         inputs = inputs.permute(1, 0, 2)
-        # states(T,B,H),state(L,B,H)
+        # states(T,B,H)
+        # state(L,B,H)
         states, state = self.rnn(inputs)
         # states:包含每个时间步最后一层的信息
         # state:包含最后一个时间步每一层的信息
@@ -91,7 +93,8 @@ class Seq2SeqDecoder(Decoder):
             input_size=embed_size + num_hiddens, 
             hidden_size=num_hiddens, 
             num_layers=num_layers, 
-            dropout=dropout
+            dropout=dropout,
+            batch_first=False
         )
         # 输出层(H,D)
         self.dense = nn.Linear(

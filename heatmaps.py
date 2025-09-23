@@ -36,7 +36,8 @@ def show_heatmaps(matrices, xlabel, ylabel, titles=None, figsize=(5, 5), cmap='R
             # cmap=cmap：使用指定的颜色映射来绘制热图
             # vmin=0, vmax=1：设置颜色映射的最小值和最大值为 0 和 1，确保所有值都映射到该范围内
             # 返回的 pcm 是一个 QuadMesh 对象，用于后续的颜色条添加
-            pcm = col_axes.imshow(col_matrix.detach().numpy(), cmap=cmap, vmin=0, vmax=1)
+            # pcm = col_axes.imshow(col_matrix.detach().numpy(), cmap=cmap, vmin=0, vmax=1)
+            pcm = col_axes.imshow(col_matrix.detach().numpy(), cmap=cmap)
             # 只在最后一行设置 x 轴标签
             if i == num_rows - 1:
                 col_axes.set_xlabel(xlabel)

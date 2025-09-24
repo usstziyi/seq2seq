@@ -25,11 +25,27 @@ def masked_softmax(score, valid_lens):
         # score(B,Q,G) -> (B*Q,G)->样本1,样本2,样本3
         # valid_lens(B*Q,)->样本1,样本2,样本3
         # score(B*Q,G)->样本1,样本2,样本3
+        # 这一步的目的：把 padding 的得分清零，但是保留查询对象位数共 G
         score = d2l.sequence_mask(score.reshape(-1, score.shape[-1]), valid_lens, value=-1e6)
-        # (B*Q,G)->(B,Q,G)
+        # (B*Q,G)->(B,Q,G),此时的G=(有效得分+剩下位置补0)
         score = score.reshape(shape)
-        # return(B,Q,G)
-        return nn.functional.softmax(score, dim=-1)
+        # weights(B,Q,G)
+        weights = nn.functional.softmax(score, dim=-1)
+        return weights
+        """处理前
+        score(B,Q,G)
+        ########******
+        ###***********
+        ############**
+        """
+
+
+        """处理后
+        weights(B,Q,G)
+        #######0000000
+        ###00000000000
+        ############00
+        """
 
 # 加性注意力网络
 # T = Q

@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import dataline as dl
 
 """
-Train:T=G
+编码的时候:为了产生 key
 --- ##################
  |  ##################
  B  ##################
@@ -20,7 +20,7 @@ Train:T=G
 B:batch_size
 G:sequence_length:group length
 
-预测:T=Q
+解码的时候:为了使用 key
 --- #########
  |  ##################
  B  ###############
@@ -143,6 +143,9 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
         # last_state(L,B,H))
         # valid_lens(B):待翻译句子的有效长度，此时只是初加工，还没有翻译
         states = states.permute(1, 0, 2)
+        # states(B,G,H)
+        # last_state(L,B,H)
+        # valid_lens(B)
         return states, last_state, valid_lens
 
     # inputs(B,Q) 训练=(B,G),预测=(1,1)
@@ -231,8 +234,13 @@ class EncoderDecoder(nn.Module):
     # valid_lens(B)
     def forward(self, src_inputs, tgt_inputs, valid_lens):
         # 编码
+        # src_inputs(B,G)
+        # states(B,G,H)
+        # last_state(L,B,H)
         states, last_state = self.encoder(src_inputs)
         # 初始化解码器 state
+        # valid_lens(B)
+        # state=(states, last_state, valid_lens)
         state = self.decoder.init_state(states,last_state,valid_lens)
         # 解码
         # tgt_inputs(B,G)
@@ -242,6 +250,7 @@ class EncoderDecoder(nn.Module):
         # valid_lens(B)
         # state=(states, last_state, valid_lens)
         outputs, state = self.decoder(tgt_inputs, state)
+        # outputs(B,G,V)
         return outputs, state
 
 # 定义训练函数
@@ -381,7 +390,7 @@ def predict_seq2seq(net, src_sentence, src_vocab, tgt_vocab, num_steps, device, 
     states, last_state = net.encoder(src_inputs)
 
     # 初始化解码器
-    # states(G,B,H)=(G,1,H)
+    # states(G,B,H)->(B,G,H)=(1,G,H)
     # last_state(L,B,H)=(L,1,H)
     # src_valid_len(1)
     # state=(states, last_state, src_valid_len)
@@ -391,23 +400,26 @@ def predict_seq2seq(net, src_sentence, src_vocab, tgt_vocab, num_steps, device, 
     # B=1
     # T=Q
     # 第一个输入是<bos>
+    # next_input(B,Q)=(1,1)
     next_input = torch.unsqueeze(torch.tensor([tgt_vocab['<bos>']], dtype=torch.long, device=device), dim=0)
 
     for _ in range(num_steps):
-        # next_input(B,G)=(1,1)
-        # outputs(B,G,V)=(1,1,V)
-        # states(B,G,H)=(1,1,H)
+        # next_input(B,Q)=(1,1)
+        # states(B,G,H)=(1,G,H)
         # last_state(L,B,H)=(L,1,H)
         # valid_lens(B)=(1)
+        # state=(states, last_state, valid_lens)
+        # outputs(B,Q,V)=(1,1,V)
         # state=(states, last_state, valid_lens)
         outputs, state = net.decoder(next_input, state)
         # tgt_hat(1,1,V)->(1,1)->next_input
         next_input = outputs.argmax(dim=2)
-        # next_input(B,G)=(1,1)->pred(1)
+        # next_input(B,Q)=(1,1)->pred(1)
         pred = next_input.squeeze(dim=0).type(torch.int32).item()
         # 保存注意力权重
         if save_attention_weights:
-            # attention_weights(B,1,G)=(1,1,G)
+            # attention_weights(B,Q,G)=(1,1,G)
+            # attention_weight_seq:(1,1,G),(1,1,G)
             attention_weight_seq.append(net.decoder.attention_weights)
         # 一旦序列<eos>词元被预测，输出序列的生成就完成了
         if pred == tgt_vocab['<eos>']:
@@ -416,8 +428,8 @@ def predict_seq2seq(net, src_sentence, src_vocab, tgt_vocab, num_steps, device, 
 
     outputs = ' '.join(tgt_vocab.to_tokens(pred_seq)) # 词元列表转换为字符串
     # 把attention_weight_seq转成 tensor,在dim=1上拼接
-    # attention_weight_seq:list((B,1,G)...)=((1,1,G)...) 测试阶段，数量由实际查询次数决定
-    # attention_weights(1,Q,G)=(1,1,10)
+    # attention_weight_seq:list(1,1,G),(1,1,G)
+    # attention_weights:tensor(1,Q,G)
     attention_weights = torch.cat([weight for weight in attention_weight_seq], dim=1)
     return outputs, attention_weights
 
@@ -478,9 +490,10 @@ def main():
     print('----------------------------------------------------------------')
     attention_weights_list = []
     for eng, fra in zip(engs, fras):
-        # attention_weights:tensor(1,Q,G)=(1,1,10)
+        # attention_weights:tensor(1,Q,G)
         translation, attention_weights = predict_seq2seq(net, eng, src_vocab, tgt_vocab, num_steps, device, save_attention_weights=True)
         # 因为预测阶段，每个句子的attention_weights的Q不同，所以这里attention_weights_list不做拼接，保留list
+        # attention_weights_list:list(1,Q,G),(1,Q,G)...
         attention_weights_list.append(attention_weights)
         # 预测评估
         print(f'{eng} => {translation}, bleu {bleu(translation, fra, k=2):.3f}')
@@ -490,9 +503,10 @@ def main():
     # 6.可视化注意力权重
     # attention_weights(1,Q,G)=(1,1,10)
     attention_weights_padded_list = []
+    # attention_weights(1,Q,G)
     for attention_weights in attention_weights_list:
-        # 将 attention_weights 的第1维长度扩展到到 10，右补 0
-        # attention_weights_padded(1,Q,G)=(1,10,10)
+        # 将 attention_weights 的第1维长度扩展到到 G，右补 0
+        # attention_weights_padded(1,G,G)=(1,10,10)
         attention_weights_padded = F.pad(attention_weights, (0, 0, 0, 10 - attention_weights.shape[1],0,0), value=0)
         attention_weights_padded_list.append(attention_weights_padded.unsqueeze(1))
     

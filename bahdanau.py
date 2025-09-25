@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import dataline as dl
 
 """
-编码的时候:为了产生 key
+编码的时候:为了产生 key,编码器无论是训练还是预测，都需要输入固定长度(B,G)的序列,所以才能生成G个key
 --- ##################
  |  ##################
  B  ##################
@@ -20,7 +20,7 @@ import dataline as dl
 B:batch_size
 G:sequence_length:group length
 
-解码的时候:为了使用 key
+解码的时候:为了使用 key,解码器输入长度没有限制，训练时输入实际长度(B,Q)=(B,G),预测时输入实际长度(B,Q)=(1,1)
 --- #########
  |  ##################
  B  ###############
@@ -108,12 +108,15 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
     def __init__(self, tgt_vocab_size, embed_size, num_hiddens, num_layers, dropout=0, **kwargs):
         super(Seq2SeqAttentionDecoder, self).__init__(**kwargs)
         
-        # 嵌入层(V,E)
+        # 嵌入层(V,E):
+        # 输入:当前时间步的输入(目标句子的单词索引)
+        # 输出:当前时间步的嵌入向量(维度为E)
         self.embedding = nn.Embedding(
             num_embeddings=tgt_vocab_size,
             embedding_dim=embed_size
         )
-        # 注意力层网络
+        # 注意力层网络:查询编码器提供的信息，求的是注意力权重，
+        # 注意力权重再与编码器的隐藏状态进行加权求和，得到上下文向量context
         self.attention = at.AdditiveAttention(
             key_size=num_hiddens,
             query_size=num_hiddens,
@@ -121,7 +124,10 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
             dropout=dropout
         )
 
-        # 循环层(E+H,H)
+        # 循环层(E+H,H):
+        # 输入:当前时间步的输入(嵌入层输出+上下文向量)
+        # 隐藏状态:上一个时间步的隐藏状态
+        # 输出:当前时间步的隐藏状态
         self.rnn = nn.GRU(
             input_size=embed_size + num_hiddens,
             hidden_size=num_hiddens,
@@ -129,7 +135,9 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
             dropout=dropout,
             batch_first=False
         )
-        # 输出层(H,V)
+        # 输出层(H,V):
+        # 输入:当前时间步的隐藏状态
+        # 输出:当前时间步的预测输出(维度为V)
         self.dense = nn.Linear(
             in_features=num_hiddens,
             out_features=tgt_vocab_size
@@ -137,7 +145,8 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
 
     
     # 注意：待翻译句子首先要经过编码器粗加工，得到半成品给解码器用
-    # 初始化解码器状态
+    # 初始化解码器状态:给编码器的states做维度转换，为了与注意力层的输入匹配
+    # 把valid_lens也打包进来
     def init_state(self, states, last_state, valid_lens):
         # states(G,B,H)
         # last_state(L,B,H))
@@ -148,7 +157,7 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
         # valid_lens(B)
         return states, last_state, valid_lens
 
-    # inputs(B,Q) 训练=(B,G),预测=(1,1)
+    # inputs(B,Q):训练=(B,G),预测=(1,1)
     def forward(self, inputs, state):
         # states(B,G,H)
         # last_state(L,B,H)
@@ -167,7 +176,7 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
         # inputs(B,Q)->(B,Q,E)->(Q,B,E)
         inputs = self.embedding(inputs).permute(1, 0, 2)
         # 保留batch,分解group->input(B,E)
-        for input in inputs: # 循环Q轮
+        for input in inputs: # 循环Q轮,进了这个for,Q这个维度就淡化了，主要处理B这个维度
             # 2.计算注意力层:在seq2seq中使用注意力机制
             # 编码器最新的隐藏状态是主动目标
             # 编码器所有时间步的隐藏状态就是被动目标，G个
@@ -181,6 +190,7 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
             # context(B,Q,V)=(B,1,H)
             context = self.attention(query, keys, values, valid_lens) # 调用注意力层(计算注意力)，计算上下文
 
+            # 保存本轮的注意力权重(B,1,G)
             # attention_weights（B,Q,G)=(B,1,G)
             # list((B,1,G),(B,1,G)...(B,1,G)）一共G个
             self._attention_weights.append(self.attention.attention_weights.detach())
@@ -188,16 +198,19 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
             # 3.计算循环层
             # input(B,E)->(B,1,E)
             input = input.unsqueeze(1)
+
             # input(B,1,E)
             # context(B,1,H)
-            # x(B,1,E+H)
-            x = torch.cat((input, context), dim=-1) # 拼接上下文和输入，在特征维度上拼接
-            # x(1,B,E+H)
-            x = x.permute(1, 0, 2)
+            # combination(B,1,E+H)
+            combination = torch.cat((input, context), dim=-1) # 拼接输入和上下文，在特征维度上拼接
+            # combination(B,1,E+H)->(1,B,E+H)
+            combination = combination.permute(1, 0, 2)
       
+            # combination(1,B,E+H)
+            # last_state(L,B,H)
             # out(1,B,H)
             # last_state(L,B,H)
-            out, last_state = self.rnn(x, last_state)
+            out, last_state = self.rnn(combination, last_state)
             outputs.append(out) # (1,B,H),(1,B,H),(1,B,H)...
 
 

@@ -5,9 +5,9 @@ from attention import DotProductAttention
 """
 多头注意力：并行计算
 
-画的是：侧面视图，维度(B,Qd)
+画的是：侧面视图，维度(B,Dq)
 
-queries(B,Q,Qd)
+queries(B,Q,Dq)
 ###########
 ###########
 ###########
@@ -92,17 +92,17 @@ class MultiHeadAttentionParallel(nn.Module):
 
         # 多头并行大隐藏层
         self.W_q = nn.Linear(
-            in_features=query_size, # Qd
+            in_features=query_size, # Dq
             out_features=num_hiddens, # H
             bias=bias
         )
         self.W_k = nn.Linear(
-            in_features=key_size, # Gd
+            in_features=key_size, # Dg
             out_features=num_hiddens, # H
             bias=bias
         )
         self.W_v = nn.Linear(
-            in_features=value_size, # Vd
+            in_features=value_size, # Dv
             out_features=num_hiddens, # H
             bias=bias
         )
@@ -119,7 +119,7 @@ class MultiHeadAttentionParallel(nn.Module):
 
     def forward(self, queries, keys, values, valid_lens):
         
-        # queries(B,Q,Qd)->(B,Q,H)
+        # queries(B,Q,Dq)->(B,Q,H)
         queries = self.W_q(queries)
         # queries(B,Q,H)->(B,Q,N,H/N)
         queries = queries.reshape(queries.shape[0],queries.shape[1],self.num_heads,-1)
@@ -128,14 +128,14 @@ class MultiHeadAttentionParallel(nn.Module):
         # queries(B,N,Q,H/N)->(B*N,Q,H/N)
         queries = queries.reshape(-1,queries.shape[2],queries.shape[3])
         
-        # keys(B,G,Gd)->(B,G,H)
+        # keys(B,G,Dg)->(B,G,H)
         keys = self.W_k(keys)
         keys = keys.reshape(keys.shape[0],keys.shape[1],self.num_heads,-1)
         keys = keys.permute(0,2,1,3)
         # keys(B*N,G,H/N)
         keys = keys.reshape(-1,keys.shape[2],keys.shape[3])
         
-        # values(B,G,Vd)->(B,G,H)
+        # values(B,G,Dv)->(B,G,H)
         values = self.W_v(values)
         values = values.reshape(values.shape[0],values.shape[1],self.num_heads,-1)
         values = values.permute(0,2,1,3)

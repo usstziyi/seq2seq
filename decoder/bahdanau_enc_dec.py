@@ -29,6 +29,12 @@ Q:real sequence_length:query length
 """
 
 
+"""
+( D_q )	表达“查询意图”的语义
+( D_k )	表达“可匹配性”的语义
+( D_v )	表达“实际内容”的语义	可独立设计，决定输出信息量
+"""
+
 
 # 编码器接口
 class Encoder(nn.Module):
@@ -56,7 +62,7 @@ class Seq2SeqEncoder(Encoder):
     # 定义网络
     def __init__(self, src_vocab_size, embed_size, num_hiddens, num_layers, dropout=0, **kwargs):
         super(Seq2SeqEncoder, self).__init__(**kwargs)
-        # 嵌入层(V,E)
+        # 嵌入层(Dv,E)
         self.embedding = nn.Embedding(
             num_embeddings=src_vocab_size, 
             embedding_dim=embed_size
@@ -103,7 +109,7 @@ class BahdanauDecoder(AttentionDecoder):
     def __init__(self, tgt_vocab_size, embed_size, num_hiddens, num_layers, dropout=0, **kwargs):
         super(BahdanauDecoder, self).__init__(**kwargs)
         
-        # 嵌入层(V,E):
+        # 嵌入层(Dv,E):
         # 输入:当前时间步的输入(目标句子的单词索引)
         # 输出:当前时间步的嵌入向量(维度为E)
         self.embedding = nn.Embedding(
@@ -130,7 +136,7 @@ class BahdanauDecoder(AttentionDecoder):
             dropout=dropout,
             batch_first=False
         )
-        # 输出层(H,V):
+        # 输出层(H,Dv):
         # 输入:当前时间步的隐藏状态
         # 输出:当前时间步的预测输出(维度为V)
         self.dense = nn.Linear(
@@ -164,7 +170,7 @@ class BahdanauDecoder(AttentionDecoder):
 
         # states(B,G,H)->keys(B,K,Kd)=(B,G,H)
         keys = states # 编码器所有时间步的隐藏状态,作为注意力层的键
-        # states(B,G,H)->values(B,K,V)=(B,G,H)
+        # states(B,G,H)->values(B,K,Dv)=(B,G,H)
         values = states # 编码器所有时间步的隐藏状态,作为注意力层的值
  
         # 1.计算嵌入层
@@ -178,11 +184,11 @@ class BahdanauDecoder(AttentionDecoder):
             # 用最新的最后一步隐状态去查所有时间步的隐藏状态，求得分，求 weights,得到上下文向量
             # last_state(L,B,H)->(B,H)->query(B,1,H)
             query = last_state[-1].unsqueeze(1) # 编码器最后一个时间步的隐藏状态
-            # query(B,Q,Qd)=(B,1,H)
-            # keys(B,G,Gd)=(B,G,H)
-            # values(B,G,V)=(B,G,H)
+            # query(B,Q,Dq)=(B,1,H)
+            # keys(B,G,Dg)=(B,G,H)
+            # values(B,G,Dv)=(B,G,H)
             # valid_lens(B)
-            # context(B,Q,V)=(B,1,H):因为values(B,G,V)=(B,G,H),所以context(B,Q,V)=(B,1,H)
+            # context(B,Q,Dv)=(B,1,H):因为values(B,G,Dv)=(B,G,H),所以context(B,Q,Dv)=(B,1,H)
             context = self.attention(query, keys, values, valid_lens) # 调用注意力层(计算注意力)，计算上下文
 
             # 保存本轮的注意力权重(B,1,G)
@@ -212,9 +218,9 @@ class BahdanauDecoder(AttentionDecoder):
 
         # outputs(Q,B,H)
         outputs = torch.cat(outputs,dim=0)
-        # outputs(Q,B,H)->(Q,B,V)->(B,Q,V)
+        # outputs(Q,B,H)->(Q,B,Dv)->(B,Q,Dv)
         outputs = self.dense(outputs).permute(1, 0, 2)
-        # outputs(B,Q,V)
+        # outputs(B,Q,Dv)
         # states(B,G,H)
         # last_state(L,B,H)
         # valid_lens(B)
@@ -253,11 +259,11 @@ class EncoderDecoder(nn.Module):
         state = self.decoder.init_state(states,last_state,valid_lens)
         # 解码
         # tgt_inputs(B,G)
-        # outputs(B,G,V)
+        # outputs(B,G,Dv)
         # states(B,G,H)
         # last_state(L,B,H)
         # valid_lens(B)
         # state=(states, last_state, valid_lens)
         outputs, state = self.decoder(tgt_inputs, state)
-        # outputs(B,G,V)
+        # outputs(B,G,Dv)
         return outputs, state

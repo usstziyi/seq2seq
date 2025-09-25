@@ -58,10 +58,10 @@ def train_seq2seq(net, data_iter, lr, num_epochs, tgt_vocab, device):
             # src_inputs(B,G)
             # tgt_teach(B,G)
             # src_valid_len(B)
-            # outputs(B,G,V)
+            # outputs(B,G,Dv)
             outputs, _ = net(src_inputs, tgt_teach, src_valid_len) 
             # 3.计算损失
-            # outputs(B,G,V)
+            # outputs(B,G,Dv)
             # tgt_inputs(B,G)
             # l(B,G)->(B)
             l = loss(outputs, tgt_inputs) # mean
@@ -100,8 +100,8 @@ class MaskedSoftmaxCELoss(nn.CrossEntropyLoss):
 
     def forward(self, input, target):
         # 计算逐位置损失，无效位置（ignore_index）损失为 0
-        # input 需要 (B,V,G)，target 是 (B,G)
-        # input(B,G,V)->(B,V,G)
+        # input 需要 (B,Dv,G)，target 是 (B,G)
+        # input(B,G,Dv)->(B,Dv,G)
         unweighted_loss = super().forward(input.permute(0, 2, 1), target)
 
         # 创建有效位置掩码：target 中不等于 ignore_index 的位置为 1
@@ -168,10 +168,10 @@ def predict_seq2seq(net, src_sentence, src_vocab, tgt_vocab, num_steps, device, 
         # last_state(L,B,H)=(L,1,H)
         # valid_lens(B)=(1)
         # state=(states, last_state, valid_lens)
-        # outputs(B,Q,V)=(1,1,V)
+        # outputs(B,Q,Dv)=(1,1,Dv)
         # state=(states, last_state, valid_lens)
         outputs, state = net.decoder(next_input, state)
-        # tgt_hat(1,1,V)->(1,1)->next_input
+        # tgt_hat(1,1,Dv)->(1,1)->next_input
         next_input = outputs.argmax(dim=2)
         # next_input(B,Q)=(1,1)->pred(1)
         pred = next_input.squeeze(dim=0).type(torch.int32).item()

@@ -5,9 +5,9 @@ from attention import DotProductAttention
 """
 多头注意力：顺序计算
 
-画的是：侧面视图，维度(B,Qd)
+画的是：侧面视图，维度(B,Dq)
 
-queries(B,Q,Qd)
+queries(B,Q,Dq)
 ###########
 ###########
 ###########
@@ -73,21 +73,21 @@ class MultiHeadAttention(nn.Module):
         for head in range(num_heads):
             self.W_q_heads.append(
                 nn.Linear(
-                    in_features=query_size, # Qd
+                    in_features=query_size, # Dq
                     out_features=num_hiddens, # H
                     bias=bias
                 )
             )
             self.W_k_heads.append(
                 nn.Linear(
-                    in_features=key_size, # Gd
+                    in_features=key_size, # Dg
                     out_features=num_hiddens, # H
                     bias=bias
                 )
             )
             self.W_v_heads.append(
                 nn.Linear(
-                    in_features=value_size, # Vd
+                    in_features=value_size, # Dv
                     out_features=num_hiddens, # H
                     bias=bias
                 )
@@ -108,13 +108,13 @@ class MultiHeadAttention(nn.Module):
         
         # 多头轮流计算注意力
         for i in range(self.num_heads):
-            # queries(B,Q,Qd)
+            # queries(B,Q,Dq)
             # queries_i(B,Q,H)
             queries_i = self.W_q_heads[i](queries)
-            # keys(B,G,Gd)
+            # keys(B,G,Dg)
             # keys_i(B,G,H)
             keys_i = self.W_k_heads[i](keys)
-            # values(B,G,Vd)
+            # values(B,G,Dv)
             # values_i(B,G,H)
             values_i = self.W_v_heads[i](values)
             

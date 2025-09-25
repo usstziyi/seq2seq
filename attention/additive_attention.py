@@ -13,17 +13,17 @@ from common import masked_softmax
 
     1维(Q)
     被查对象:(G)由外部传入,固定长度
-    对象内容:(G,V)
+    对象内容:(G,Dv)
     原查对象:(Q)由外部传入,长度不固定
     权重分配:(Q,G)
-    加权求和:(Q,G)*(G,V)->(Q,V)->Q拿到自己的V
+    加权求和:(Q,G)*(G,Dv)->(Q,Dv)->Q拿到自己的V
 
     2维(B,Q)
     原查对象(B,Q)
     被查对象(B,G)
-    对象内容(G,V)
+    对象内容(G,Dv)
     权重分配(B,Q,G)
-    加权求和:(B,Q,G)bmm(B,G,V)->(B,Q,V)->(B,Q)拿到自己的V
+    加权求和:(B,Q,G)bmm(B,G,Dv)->(B,Q,Dv)->(B,Q)拿到自己的V
 
 """
 
@@ -33,22 +33,22 @@ class AdditiveAttention(nn.Module):
     """加性注意力"""
     def __init__(self, key_size, query_size, num_hiddens, dropout, **kwargs):
         super(AdditiveAttention, self).__init__(**kwargs)
-        # (Gd,H)
+        # (Dg,H)
         self.W_k = nn.Linear(key_size, num_hiddens, bias=False)
-        # (Qd,H)
+        # (Dq,H)
         self.W_q = nn.Linear(query_size, num_hiddens, bias=False)
         # (H,1)
         self.w_v = nn.Linear(num_hiddens, 1, bias=False)
         self.dropout = nn.Dropout(dropout)
 
-    # queries(B,Q,Qd)
-    # keys(B,G,Gd)
-    # values(B,G,V)
+    # queries(B,Q,Dq)
+    # keys(B,G,Dg)
+    # values(B,G,Dv)
     # valid_lens(B) or (B,Q)
     def forward(self, queries, keys, values, valid_lens): # 可以按(B,Q)块处理
-        # (B,Q,Qd)*(Qd,H)->(B,Q,H)
+        # (B,Q,Dq)*(Dq,H)->(B,Q,H)
         queries = self.W_q(queries) # 一次处理Q步推理
-        # (B,G,Gd)*(Gd,H)->(B,G,H)
+        # (B,G,Dg)*(Dg,H)->(B,G,H)
         keys = self.W_k(keys)
         # queries(B,Q,H)->(B,Q,1,H)
         # keys(B,G,H)->(B,1,G,H)
@@ -71,8 +71,8 @@ class AdditiveAttention(nn.Module):
         # dropped_weights(B,Q,G)
         dropped_weights = self.dropout(self.attention_weights)
         # dropped_weights(B,Q,G)
-        # values(B,G,V)
-        # outputs(B,Q,V)
+        # values(B,G,Dv)
+        # outputs(B,Q,Dv)
         outputs = torch.bmm(dropped_weights, values)
         return outputs
 

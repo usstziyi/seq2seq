@@ -19,9 +19,9 @@ def main():
     num_queries = 4  # Q
     num_kvpairs =  6 # G
     # 输入：
-    # queries(B,Q,Qd)=(B,Q,H)
-    # keys(B,G,Gd)=(B,G,H)
-    # values(B,G,Bd)=(B,G,H)
+    # queries(B,Q,Dq)=(B,Q,H)
+    # keys(B,G,Dg)=(B,G,H)
+    # values(B,G,Dg)=(B,G,H)
     # valid_lens(B)
     queries = torch.ones((batch_size, num_queries, num_hiddens))
     keys = torch.ones((batch_size, num_kvpairs, num_hiddens))

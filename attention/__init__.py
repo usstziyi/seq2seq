@@ -5,9 +5,11 @@
 from .additive_attention import AdditiveAttention
 from .dotproduct_attention import DotProductAttention
 from .multihead_attention import MultiHeadAttention
+from .multihead_attention_parallel import MultiHeadAttentionParallel
 
 __all__ = [
     'AdditiveAttention',
     'DotProductAttention',
-    'MultiHeadAttention'
+    'MultiHeadAttention',
+    'MultiHeadAttentionParallel'
 ]

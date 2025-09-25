@@ -37,13 +37,13 @@ class DotProductAttention(nn.Module):
 
     # queries(B,Q,Qd)
     # keys(B,G,Gd)
-    # values(B,G,V)
+    # values(B,G,Vd)
     # valid_lens(B) or (B,Q)
     def forward(self, queries, keys, values, valid_lens=None): # 可以按(B,Q)块处理
         # d = Qd
         d = queries.shape[-1]
         # queries(B,Q,Qd)
-        # keys'T(B,Gd,G)  # 关键点:keys转置
+        # keys'T(B,Gd,G)  # 关键点:Qd=Gd，这里才可以bmm
         # score(B,Q,G)
         scores = torch.bmm(queries, keys.transpose(1,2)) / math.sqrt(d)  # 缩放点积
 
@@ -57,8 +57,8 @@ class DotProductAttention(nn.Module):
         # dropped_weights(B,Q,G)
         dropped_weights = self.dropout(self.attention_weights)
         # dropped_weights(B,Q,G)
-        # values(B,G,V)
-        # outputs(B,Q,V)
+        # values(B,G,Vd)
+        # outputs(B,Q,Vd)
         outputs = torch.bmm(dropped_weights, values)
         return outputs
 

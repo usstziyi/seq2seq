@@ -80,7 +80,7 @@ class Seq2SeqEncoder(Encoder):
     # inputs(B,G)
     # states(G,B,H)
     # last_state(L,B,H)
-    def forward(self, inputs):
+    def forward(self, inputs): # 编码的时候可以(B,G)按块进行
         # inputs(B,G)->(B,G,E)
         inputs = self.embedding(inputs)
         # inputs(G,B,E)
@@ -158,7 +158,7 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
         return states, last_state, valid_lens
 
     # inputs(B,Q):训练=(B,G),预测=(1,1)
-    def forward(self, inputs, state):
+    def forward(self, inputs, state): # 解码的时候最多按(B,1)处理
         # states(B,G,H)
         # last_state(L,B,H)
         # valid_lens(B)
@@ -187,7 +187,7 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
             # keys(B,G,Gd)=(B,G,H)
             # values(B,G,V)=(B,G,H)
             # valid_lens(B)
-            # context(B,Q,V)=(B,1,H)
+            # context(B,Q,V)=(B,1,H):因为values(B,G,V)=(B,G,H),所以context(B,Q,V)=(B,1,H)
             context = self.attention(query, keys, values, valid_lens) # 调用注意力层(计算注意力)，计算上下文
 
             # 保存本轮的注意力权重(B,1,G)
@@ -208,8 +208,8 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
       
             # combination(1,B,E+H)
             # last_state(L,B,H)
-            # out(1,B,H)
-            # last_state(L,B,H)
+            # out(1,B,H):当前时间步最后一层隐藏状态
+            # last_state(L,B,H):当前时间步的隐状态
             out, last_state = self.rnn(combination, last_state)
             outputs.append(out) # (1,B,H),(1,B,H),(1,B,H)...
 
@@ -227,9 +227,10 @@ class Seq2SeqAttentionDecoder(AttentionDecoder):
 
     @property
     def attention_weights(self):
+        # 把列表中的注意力权重(B,1,G)拼接起来(B,Q,G)，生成张量
         # weight(B,1,G) 一共Q个
-        # attention_weights(B,Q,G)
-        attention_weights = torch.cat([weight for weight in self._attention_weights], dim=1)
+        # attention_weights(B,Q,G):表示B个句子的Q个时间步的注意力权重
+        attention_weights = torch.cat(self._attention_weights, dim=1)
         return attention_weights
 
 
@@ -503,7 +504,7 @@ def main():
     print('----------------------------------------------------------------')
     attention_weights_list = []
     for eng, fra in zip(engs, fras):
-        # attention_weights:tensor(1,Q,G)
+        # attention_weights(B,Q,G)=(1,Q,G)
         translation, attention_weights = predict_seq2seq(net, eng, src_vocab, tgt_vocab, num_steps, device, save_attention_weights=True)
         # 因为预测阶段，每个句子的attention_weights的Q不同，所以这里attention_weights_list不做拼接，保留list
         # attention_weights_list:list(1,Q,G),(1,Q,G)...

@@ -4,51 +4,32 @@ from torch import nn
 from d2l import torch as d2l
 import heatmaps as hm
 
+
 """
-K=G
+注意力机制本质:
+    0维(唐伯虎点秋香)
+    首先要有被查询的对象，和对象指代的内容，
+    然后要有人去查,去和每个对象比对,得到得分,再Mask+Softmax得到权重,
+    最后根据权重，去加权求和对象指代的内容，得到最终的输出。
+
+    1维(Q)
+    被查对象:(G)由外部传入,固定长度
+    对象内容:(G,V)
+    原查对象:(Q)由外部传入,长度不固定
+    权重分配:(Q,G)
+    加权求和:(Q,G)*(G,V)->(Q,V)->Q拿到自己的V
+
+    2维(B,Q)
+    原查对象(B,Q)
+    被查对象(B,G)
+    对象内容(G,V)
+    权重分配(B,Q,G)
+    加权求和:(B,Q,G)bmm(B,G,V)->(B,Q,V)->(B,Q)拿到自己的V
+
 """
 
-# score(B,Q,G)
-# valid_lens(B):batch中不同样本的有效长度不同，每个查询共用一个key 查询库
-# valid_lens(B,Q):batch中不同样本的有效长度不同，每个查询有自己独立的 key 查询库，所以需要加一个维度来存储不同的 key 查询库大小
-def masked_softmax(score, valid_lens):
-    shape = score.shape
-    if valid_lens is None:
-        return nn.functional.softmax(score, dim=-1)
-    else:
-        if valid_lens.dim() == 1:
-            # valid_lens(B,) -> (B*Q)举个例子[1,1,1,2,2,2,3,3,3]->样本1,样本2,样本3
-            valid_lens = torch.repeat_interleave(valid_lens, score.shape[1])
-        else:
-            # valid_lens(B,Q) -> (B*Q)
-            valid_lens = valid_lens.reshape(-1) # 先内后外->样本1,样本2,样本3
-        # score(B,Q,G) -> (B*Q,G)->样本1,样本2,样本3
-        # valid_lens(B*Q,)->样本1,样本2,样本3
-        # score(B*Q,G)->样本1,样本2,样本3
-        # 这一步的目的：把 padding 的得分清零，但是保留查询对象位数共 G
-        score = d2l.sequence_mask(score.reshape(-1, score.shape[-1]), valid_lens, value=-1e6)
-        # (B*Q,G)->(B,Q,G),此时的G=(有效得分+剩下位置补0)
-        score = score.reshape(shape)
-        # weights(B,Q,G)
-        weights = nn.functional.softmax(score, dim=-1)
-        return weights
-        """处理前
-        score(B,Q,G)
-        ########******
-        ###***********
-        ############**
-        """
-
-
-        """处理后
-        weights(B,Q,G)
-        #######0000000
-        ###00000000000
-        ############00
-        """
 
 # 加性注意力网络
-# T = Q
 class AdditiveAttention(nn.Module):
     """加性注意力"""
     def __init__(self, key_size, query_size, num_hiddens, dropout, **kwargs):
@@ -64,8 +45,8 @@ class AdditiveAttention(nn.Module):
     # queries(B,Q,Qd)
     # keys(B,G,Gd)
     # values(B,G,V)
-    # valid_lens(B)
-    def forward(self, queries, keys, values, valid_lens):
+    # valid_lens(B) or (B,Q)
+    def forward(self, queries, keys, values, valid_lens): # 可以按(B,Q)块处理
         # (B,Q,Qd)*(Qd,H)->(B,Q,H)
         queries = self.W_q(queries) # 一次处理Q步推理
         # (B,G,Gd)*(Gd,H)->(B,G,H)
@@ -97,7 +78,7 @@ class AdditiveAttention(nn.Module):
         return outputs
 
 
-# 缩放点积注意力网络
+# 缩放点积注意力网络,Qd=Gd才行
 class DotProductAttention(nn.Module):
     """缩放点积注意力"""
     def __init__(self, dropout, **kwargs):
@@ -105,28 +86,60 @@ class DotProductAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     # queries(B,Q,Qd)
-    # keys(B,K,Kd)
-    # values(B,K,V)
-    # valid_lens(B,) or (B,Q)
-    def forward(self, queries, keys, values, valid_lens=None):
+    # keys(B,G,Gd)
+    # values(B,G,V)
+    # valid_lens(B) or (B,Q)
+    def forward(self, queries, keys, values, valid_lens=None): # 可以按(B,Q)块处理
         # d = Qd
         d = queries.shape[-1]
-        # queries(B,Q,Qd)=(2,1,2)
-        # keys'T(B,Kd,K)=(2,2,10)  # 关键点:keys转置
-        # score(B,Q,K)=(2,1,10)
+        # queries(B,Q,Qd)
+        # keys'T(B,Gd,G)  # 关键点:keys转置
+        # score(B,Q,G)
         scores = torch.bmm(queries, keys.transpose(1,2)) / math.sqrt(d)  # 缩放点积
 
         # --------------------------------------
 
-        # scores(B,Q,K)=(2,1,10)
-        # valid_lens(B,) or (B,Q)
-        # attention_weights(B,Q,K)=(2,1,10)
+        # scores(B,Q,G)
+        # valid_lens(B) or (B,Q)
+        # attention_weights(B,Q,G)
         self.attention_weights = masked_softmax(scores, valid_lens)
-        # attention_weights(B,Q,K)=(2,1,10)
-        # values(B,K,V)=(2,10,2)
-        # outputs(B,Q,V)=(2,1,2)
-        outputs = torch.bmm(self.dropout(self.attention_weights), values)
+        # attention_weights(B,Q,G)
+        # dropped_weights(B,Q,G)
+        dropped_weights = self.dropout(self.attention_weights)
+        # dropped_weights(B,Q,G)
+        # values(B,G,V)
+        # outputs(B,Q,V)
+        outputs = torch.bmm(dropped_weights, values)
         return outputs
+
+
+
+
+
+
+
+def main():
+    attention_weights = test_additive_attention()
+    hm.show_heatmaps(
+        # attention_weights(B,Q,K)=(2,1,10)->(1,1,2,10)
+        matrices=attention_weights.reshape(1,1,attention_weights.shape[0],attention_weights.shape[2]),
+        xlabel='Keys',
+        ylabel='Queries',
+        figsize=(9, 6),   # 宽一些，适合 2x3 布局
+        cmap='Reds'
+    )
+
+
+
+    attention_weights = test_dot_product_attention()
+    hm.show_heatmaps(
+        # attention_weights(B,Q,K)=(2,1,10)->(1,1,2,10)
+        matrices=attention_weights.reshape(1,1,attention_weights.shape[0],attention_weights.shape[2]),
+        xlabel='Keys',
+        ylabel='Queries',
+        figsize=(9, 6),   # 宽一些，适合 2x3 布局
+        cmap='Reds'
+    )
 
 
 
@@ -180,28 +193,47 @@ def test_dot_product_attention():
     return model.attention_weights
 
 
-def main():
-    attention_weights = test_additive_attention()
-    hm.show_heatmaps(
-        # attention_weights(B,Q,K)=(2,1,10)->(1,1,2,10)
-        matrices=attention_weights.reshape(1,1,attention_weights.shape[0],attention_weights.shape[2]),
-        xlabel='Keys',
-        ylabel='Queries',
-        figsize=(9, 6),   # 宽一些，适合 2x3 布局
-        cmap='Reds'
-    )
+# score(B,Q,G)
+# valid_lens(B):batch中不同样本的有效长度不同，每个查询共用一个key 查询库
+# valid_lens(B,Q):batch中不同样本的有效长度不同，每个查询有自己独立的 key 查询库，所以需要加一个维度来存储不同的 key 查询库大小
+def masked_softmax(score, valid_lens):
+    shape = score.shape
+    if valid_lens is None:
+        return nn.functional.softmax(score, dim=-1)
+    else:
+        if valid_lens.dim() == 1:
+            # valid_lens(B,) -> (B*Q)举个例子[1,1,1,2,2,2,3,3,3]->样本1,样本2,样本3
+            valid_lens = torch.repeat_interleave(valid_lens, score.shape[1])
+        else:
+            # valid_lens(B,Q) -> (B*Q)
+            valid_lens = valid_lens.reshape(-1) # 先内后外->样本1,样本2,样本3
+        # score(B,Q,G) -> (B*Q,G)->样本1,样本2,样本3
+        # valid_lens(B*Q,)->样本1,样本2,样本3
+        # score(B*Q,G)->样本1,样本2,样本3
+        # 这一步的目的：把 padding 的得分清零，但是保留查询对象位数共 G
+        score = d2l.sequence_mask(score.reshape(-1, score.shape[-1]), valid_lens, value=-1e6)
+        # (B*Q,G)->(B,Q,G),此时的G=(有效得分+剩下位置补0)
+        score = score.reshape(shape)
+        # weights(B,Q,G)
+        weights = nn.functional.softmax(score, dim=-1)
+        return weights
+        """处理前
+        score(B,Q,G)
+        ########******
+        ###***********
+        ############**
+        """
+
+
+        """处理后
+        weights(B,Q,G)
+        #######0000000
+        ###00000000000
+        ############00
+        """
 
 
 
-    attention_weights = test_dot_product_attention()
-    hm.show_heatmaps(
-        # attention_weights(B,Q,K)=(2,1,10)->(1,1,2,10)
-        matrices=attention_weights.reshape(1,1,attention_weights.shape[0],attention_weights.shape[2]),
-        xlabel='Keys',
-        ylabel='Queries',
-        figsize=(9, 6),   # 宽一些，适合 2x3 布局
-        cmap='Reds'
-    )
 
 if __name__ == '__main__':
     main()

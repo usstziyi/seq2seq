@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 
 
 # 初始化绘图
-def init_plot(lr):
+def init_plot(lr, title='Training loss vs Epoch'):
     plt.ion()  # 开启交互模式
     fig, ax = plt.subplots(figsize=(10, 6))
     x_list = [] # x轴数据
@@ -10,7 +10,7 @@ def init_plot(lr):
     line, = ax.plot(x_list, y_list, 'b-', linewidth=2, label='Perplexity')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('loss')
-    ax.set_title(f'bahdanau attention Training loss vs Epoch (lr={lr})')
+    ax.set_title(f'{title} (lr={lr})')
     ax.grid(True)
     ax.legend()
     plt.tight_layout()

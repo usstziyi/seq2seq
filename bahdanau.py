@@ -9,6 +9,8 @@ import heatmaps as hm
 import torch.nn.functional as F
 import dataline as dl
 
+# Bahdanau编码器
+
 """
 编码的时候:为了产生 key,编码器无论是训练还是预测，都需要输入固定长度(B,G)的序列,所以才能生成G个key
 --- ##################
@@ -103,7 +105,7 @@ class AttentionDecoder(Decoder):
 
 
 
-# Bahdanau解码器网络模型：输入原句子，输出目标句子
+# Bahdanau解码器(内嵌加性注意力)网络模型：输入原句子，输出目标句子
 class Seq2SeqAttentionDecoder(AttentionDecoder):
     def __init__(self, tgt_vocab_size, embed_size, num_hiddens, num_layers, dropout=0, **kwargs):
         super(Seq2SeqAttentionDecoder, self).__init__(**kwargs)

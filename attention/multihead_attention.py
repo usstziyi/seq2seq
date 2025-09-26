@@ -62,8 +62,7 @@ class MultiHeadAttention(nn.Module):
         super(MultiHeadAttention, self).__init__(**kwargs)
     
         self.num_heads = num_heads # N
-        # 指定单头的注意力算法
-        self.attention = DotProductAttention(dropout)
+
 
         # 隐藏层(每个头的隐藏层)
         self.W_q_heads = []
@@ -93,6 +92,10 @@ class MultiHeadAttention(nn.Module):
                 )
             )
         
+
+        # 注意力层
+        self.attention = DotProductAttention(dropout)
+
         # 输出层(总的输出层)
         self.W_o = nn.Linear(
             in_features=num_hiddens * num_heads, # H * N

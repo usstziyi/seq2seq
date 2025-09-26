@@ -29,7 +29,9 @@ def show_heatmaps(matrices, xlabel, ylabel, titles=None, figsize=(5, 5), cmap='R
     #     [ax00, ax01, ax02],   ←  matrices[0,0],matrices[0,1],matrices[0,2]
     #     [ax10, ax11, ax12]    ←  matrices[1,0],matrices[1,1],matrices[1,2]
     # ]
+    # 从第0维开始分离
     for i, (row_axes, row_matrices) in enumerate(zip(axes, matrices)): 
+        # 从剩下的第0维开始分离
         for j, (col_axes, col_matrix) in enumerate(zip(row_axes, row_matrices)): 
             # 在当前子图上绘制热图
             # col_matrix.detach().numpy()：将 PyTorch 张量从计算图中分离并转换为 NumPy 数组

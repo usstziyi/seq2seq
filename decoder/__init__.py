@@ -14,6 +14,10 @@ from .bahdanau_enc_dec import (
     BahdanauDecoder,
     EncoderDecoder as BahdanauEncoderDecoder  # Bahdanau注意力编码器-解码器
 )
+from .transformer_enc_dec import (
+    TransformerEncoder,
+    TransformerDecoder
+)
 
 __all__ = [
     'Encoder',
@@ -22,5 +26,7 @@ __all__ = [
     'Seq2SeqDecoder',
     'BahdanauDecoder',
     'BasicEncoderDecoder',  # 基础版编码器-解码器
-    'BahdanauEncoderDecoder'  # Bahdanau编码器-解码器
+    'BahdanauEncoderDecoder',  # Bahdanau编码器-解码器
+    'TransformerEncoder',
+    'TransformerDecoder'
 ]

@@ -4,11 +4,26 @@ import torch
 from torch import nn
 from d2l import torch as d2l
 
+"""
+尽管Transformer架构是为了序列到序列的学习而提出的
+但Transformer编码器或Transformer解码器通常被单独用于不同的深度学习任务中。
+"""
+
+"""
+基于位置的前馈网络:
+"基于位置的前馈网络"(Position-wise Feed-Forward Network,简称 Position-wise FFN)是 Transformer 架构中的一个关键组件。
+虽然名字里有"位置"，但它并不直接处理位置信息(位置信息通常由位置编码 Positional Encoding 提供),
+而是指这个前馈网络对序列中每个位置(token)独立地、相同地应用"同一个"全连接网络. 
+这一步增强了模型的非线性表达能力,因为自注意力机制本身是线性的（只是加权求和）,需要 FFN 来引入非线性。
+在原始 Transformer 论文(Vaswani et al., 2017)中,FFN 的隐藏层维度通常是输入维度的 4 倍,例如:Dg=512 → H=2048。
+第一层：升维(如 512 → 2048)→ 增强模型容量，让网络在更高维空间中进行非线性变换。
+第二层：降维(2048 → 512)→ 恢复原始维度，便于与残差连接相加。
+"""
 class PositionWiseFFN(nn.Module):
-    """基于位置的前馈网络"""
     # Dg:ffn_num_input
     # H: ffn_num_hiddens
     # Do:ffn_num_outputs
+    # 一般来说:Dg = Do
     def __init__(self, ffn_num_input, ffn_num_hiddens, ffn_num_outputs, **kwargs):
         super(PositionWiseFFN, self).__init__(**kwargs)
 
@@ -21,9 +36,10 @@ class PositionWiseFFN(nn.Module):
         return self.dense2(self.relu(self.dense1(X)))
 
 
-
+"""
+残差连接后进行层规范化
+"""
 class AddNorm(nn.Module):
-    """残差连接后进行层规范化"""
     def __init__(self, normalized_shape, dropout, **kwargs):
         super(AddNorm, self).__init__(**kwargs)
         
@@ -33,9 +49,11 @@ class AddNorm(nn.Module):
     def forward(self, X, Y):
         return self.ln(self.dropout(Y) + X)
 
-
+"""
+Transformer编码器块
+"""
 class EncoderBlock(nn.Module):
-    """Transformer编码器块"""
+
     def __init__(self, key_size, query_size, value_size, num_hiddens,
                  norm_shape, ffn_num_input, ffn_num_hiddens, num_heads,
                  dropout, use_bias=False, **kwargs):
@@ -54,10 +72,10 @@ class EncoderBlock(nn.Module):
         Y = self.addnorm2(Y, self.ffn(Y))
         return Y
 
-
-
+"""
+Transformer编码器
+"""
 class TransformerEncoder(d2l.Encoder):
-    """Transformer编码器"""
     def __init__(self, vocab_size, key_size, query_size, value_size,
                  num_hiddens, norm_shape, ffn_num_input, ffn_num_hiddens,
                  num_heads, num_layers, dropout, use_bias=False, **kwargs):
@@ -87,9 +105,10 @@ class TransformerEncoder(d2l.Encoder):
         return X
 
 
-
+"""
+Transformer解码器块
+"""
 class DecoderBlock(nn.Module):
-    """解码器中第i个块"""
     def __init__(self, key_size, query_size, value_size, num_hiddens,
                  norm_shape, ffn_num_input, ffn_num_hiddens, num_heads,
                  dropout, i, **kwargs):
@@ -135,7 +154,9 @@ class DecoderBlock(nn.Module):
         # 位置前馈网络
         return self.addnorm3(Z, self.ffn(Z)), state
 
-
+"""
+Transformer解码器
+"""
 class TransformerDecoder(d2l.AttentionDecoder):
     def __init__(self, vocab_size, key_size, query_size, value_size,
                  num_hiddens, norm_shape, ffn_num_input, ffn_num_hiddens,

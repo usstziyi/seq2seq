@@ -1,5 +1,4 @@
-from numpy import single
-from attention import MultiHeadAttention
+from attention import MultiHeadAttentionParallel
 import torch
 
 """
@@ -19,10 +18,10 @@ dk = dv = 64(头维度)
 此时 Q、K、V 的 shape 都是 nx64(单头),所以看起来一样，但这不是必须的。
 """
 
-# 这里的测试用例是：用多头串行计算自注意力
+
+# 这里的测试用例是：用多头并行计算自注意力
 def main():
     num_heads = 8
-    # 单头隐藏层维度
     single_num_hiddens = 64
     # 从多头注意力内部看
     # H=h*N
@@ -37,34 +36,49 @@ def main():
     # 4. 不同样本的信息
     # 5. 不同层的信息
     # ...
-    model = MultiHeadAttention(
-        query_size=single_num_hiddens,
-        key_size=single_num_hiddens,
-        value_size=single_num_hiddens,
-        num_hiddens=single_num_hiddens,
-        num_heads=num_heads,
-        dropout=0.5
-    )
-    model.eval()
 
-    batch_size = 2   # B
-    num_queries = 6  # Q
-    num_kvpairs =  6 # G
     # 输入：
     # queries(B,Q,Dq)=(B,Q,H)
     # keys(B,G,Dg)=(B,G,H)
-    # values(B,G,Bd)=(B,G,H)
+    # values(B,G,Dv)=(B,G,H)
     # valid_lens(B)
-    queries = torch.ones((batch_size, num_queries, single_num_hiddens))
-    keys = torch.ones((batch_size, num_kvpairs, single_num_hiddens))
-    values = torch.ones((batch_size, num_kvpairs, single_num_hiddens))
+    # 输出：
+    # outputs(B,Q,H)=(B,Q,H)
+    # 这里的H维度包含多个头学习到的信息
+    num_hiddens = single_num_hiddens * num_heads # 512
+    model = MultiHeadAttentionParallel(
+        query_size=num_hiddens,
+        key_size=num_hiddens,
+        value_size=num_hiddens,
+        num_hiddens=num_hiddens,
+        num_heads=num_heads,
+        dropout=0.5
+    )
+    model.eval()    
+
+    batch_size = 2   # B
+
+    # 在自注意力中Q=G
+    num_queries = 6  # Q
+    num_kvpairs =  6 # G
+
+    # 输入：
+    # queries(B,Q,Dq)=(B,Q,H)
+    # keys(B,G,Dg)=(B,G,H)
+    # values(B,G,Dg)=(B,G,H)
+    # valid_lens(B)
+    # queries = torch.ones((batch_size, num_queries, num_hiddens))
+    # keys = torch.ones((batch_size, num_kvpairs, num_hiddens))
+    # values = torch.ones((batch_size, num_kvpairs, num_hiddens))
+    x = torch.ones((batch_size, num_queries, num_hiddens))
     valid_lens = torch.tensor([3, 2])
 
-    # outputs(B,Q,H*num_heads)
+    # x(B,G,H)=(B,G,512)
+    # outputs(B,G,H*single_num_heads)=(B,G,512)
     outputs = model(
-        queries=queries,
-        keys=keys,
-        values=values,
+        queries=x,
+        keys=x,
+        values=x,
         valid_lens=valid_lens
     )
     print(outputs.shape)

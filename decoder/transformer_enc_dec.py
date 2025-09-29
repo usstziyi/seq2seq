@@ -99,7 +99,7 @@ class EncoderBlock(nn.Module):
         self.attention = d2l.MultiHeadAttention(key_size, query_size, value_size, num_hiddens, num_heads, dropout,use_bias)
         self.addnorm1 = AddNorm(norm_shape, dropout) # 残差连接 & 规范化层
         
-        # 前馈网络
+        # 基于位置的前馈网络
         self.ffn = PositionWiseFFN(ffn_num_input, ffn_num_hiddens, num_hiddens)
         self.addnorm2 = AddNorm(norm_shape, dropout) # 残差连接 & 规范化层
 
@@ -133,7 +133,10 @@ class TransformerEncoder(d2l.Encoder):
         # 因为位置编码值在-1和1之间，
         # 因此嵌入值乘以嵌入维度的平方根进行缩放，
         # 然后再与位置编码相加。
+
+        # 位置编码
         X = self.pos_encoding(self.embedding(X) * math.sqrt(self.num_hiddens))
+        # 编码块层
         self.attention_weights = [None] * len(self.blks)
         for i, blk in enumerate(self.blks):
             X = blk(X, valid_lens)

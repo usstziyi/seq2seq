@@ -13,8 +13,10 @@ from d2l import torch as d2l
 基于位置的前馈网络:
 "基于位置的前馈网络"(Position-wise Feed-Forward Network,简称 Position-wise FFN)是 Transformer 架构中的一个关键组件。
 虽然名字里有"位置"，但它并不直接处理位置信息(位置信息通常由位置编码 Positional Encoding 提供),
-而是指这个前馈网络对序列中每个位置(token)独立地、相同地应用"同一个"全连接网络. 
-这一步增强了模型的非线性表达能力,因为自注意力机制本身是线性的（只是加权求和）,需要 FFN 来引入非线性。
+
+*****而是指这个前馈网络对序列中每个位置(token)独立地、相同地应用"同一个"全连接网络.
+*****这一步增强了模型的非线性表达能力,因为自注意力机制本身是线性的（只是加权求和）,需要 FFN 来引入非线性。
+
 在原始 Transformer 论文(Vaswani et al., 2017)中,FFN 的隐藏层维度通常是输入维度的 4 倍,例如:Dg=512 → H=2048。
 第一层：升维(如 512 → 2048)→ 增强模型容量，让网络在更高维空间中进行非线性变换。
 第二层：降维(2048 → 512)→ 恢复原始维度，便于与残差连接相加。
@@ -37,7 +39,34 @@ class PositionWiseFFN(nn.Module):
 
 
 """
-残差连接后进行层规范化
+残差连接 & 层归一化
+self.dropout(Y) + X
+残差连接(Residual Connection)是一种常用的神经网络结构,用于解决深度神经网络训练中的梯度消失问题。
+它的基本思想是将输入直接添加到输出中,形成一个新的输出。
+这在Transformer架构中被广泛使用,用于连接不同的层(如自注意力层、前馈网络层等)。
+
+self.ln
+层归一化(Layer Normalization)是一种常用的归一化技术,用于在神经网络中稳定训练过程。
+它的基本思想是对每个样本的所有特征维度进行归一化,而不是对所有样本的所有特征维度进行归一化。
+这在Transformer架构中被广泛使用,用于归一化残差连接的输出。
+对于一个输入张量(比如形状为 [batch_size, seq_len, d_model]),
+Layer Normalization 是对 每个样本的最后一个维度（即特征维度） 进行归一化。
+
+在原始 Transformer 论文《Attention is All You Need》中,
+采用的是 Post-LN 结构(先子层 → 再 Add & Norm),
+但后来很多实现（如 BERT、大多数现代 Transformer)改用 Pre-LN(先 Norm → 再子层 → 再 Add)
+你这段代码属于 Post-LN 风格。
+
+残差连接(Add):
+缓解深层网络的梯度消失问题。
+允许信息直接跨层流动，提升训练稳定性。
+
+Layer Normalization(Norm):
+对每个样本的特征维度做归一化（不同于 BatchNorm)。
+在 NLP 任务中特别有效,因为句子长度可变,BatchNorm 不稳定。
+
+Dropout:
+在残差连接前对子层输出做随机失活，增强泛化能力。
 """
 class AddNorm(nn.Module):
     def __init__(self, normalized_shape, dropout, **kwargs):
@@ -46,6 +75,13 @@ class AddNorm(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.ln = nn.LayerNorm(normalized_shape)
 
+    # X：通常是输入（比如前一层的输出）
+    # Y：通常是某个子层（如多头注意力或前馈网络）的输出
+    # 操作流程：
+    # 1. 对子层输出 Y 应用 Dropout（用于正则化，防止过拟合）。
+    # 2. 将 Dropout 后的 Y 与原始输入 X 相加 → 这就是 残差连接（skip connection）。
+    # 3. 对相加结果进行 Layer Normalization。
+    # 这样每一层都通过残差连接保留了原始信息，并通过 LayerNorm 稳定训练过程。
     def forward(self, X, Y):
         return self.ln(self.dropout(Y) + X)
 

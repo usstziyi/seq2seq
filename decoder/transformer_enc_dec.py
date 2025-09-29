@@ -121,7 +121,7 @@ class TransformerEncoder(d2l.Encoder):
         self.num_hiddens = num_hiddens
         self.embedding = nn.Embedding(vocab_size, num_hiddens)
         self.pos_encoding = d2l.PositionalEncoding(num_hiddens, dropout)
-        # 编码器层
+        # 编码器块层
         self.blks = nn.Sequential()
         for i in range(num_layers):
             self.blks.add_module("block"+str(i),
@@ -136,7 +136,7 @@ class TransformerEncoder(d2l.Encoder):
 
         # 位置编码
         X = self.pos_encoding(self.embedding(X) * math.sqrt(self.num_hiddens))
-        # 编码块层
+        # 编码器块层
         self.attention_weights = [None] * len(self.blks)
         for i, blk in enumerate(self.blks):
             X = blk(X, valid_lens)
@@ -153,13 +153,13 @@ class DecoderBlock(nn.Module):
                  dropout, i, **kwargs):
         super(DecoderBlock, self).__init__(**kwargs)
         self.i = i
-        # 自注意力层
+        # 多头自注意力层
         self.attention1 = d2l.MultiHeadAttention(key_size, query_size, value_size, num_hiddens, num_heads, dropout)
         self.addnorm1 = AddNorm(norm_shape, dropout)
-        # 编码器－解码器注意力层
+        # 编码器－解码器多头自注意力层
         self.attention2 = d2l.MultiHeadAttention(key_size, query_size, value_size, num_hiddens, num_heads, dropout)
         self.addnorm2 = AddNorm(norm_shape, dropout)
-        # 位置前馈网络
+        # 基于位置的前馈网络
         self.ffn = PositionWiseFFN(ffn_num_input, ffn_num_hiddens, num_hiddens)
         self.addnorm3 = AddNorm(norm_shape, dropout)
 
@@ -183,10 +183,10 @@ class DecoderBlock(nn.Module):
         else:
             dec_valid_lens = None
 
-        # 自注意力
+        # 多头自注意力
         X2 = self.attention1(X, key_values, key_values, dec_valid_lens)
         Y = self.addnorm1(X, X2)
-        # 编码器－解码器注意力
+        # 编码器－解码器多头自注意力
         # enc_outputs的开头:(batch_size,num_steps,num_hiddens)
         Y2 = self.attention2(Y, enc_outputs, enc_outputs, enc_valid_lens)
         Z = self.addnorm2(Y, Y2)
@@ -206,7 +206,7 @@ class TransformerDecoder(d2l.AttentionDecoder):
         self.embedding = nn.Embedding(vocab_size, num_hiddens)
         # 位置编码
         self.pos_encoding = d2l.PositionalEncoding(num_hiddens, dropout)
-        # 解码器层
+        # 解码器块层
         self.blks = nn.Sequential()
         for i in range(num_layers):
             self.blks.add_module("block"+str(i),
@@ -220,7 +220,9 @@ class TransformerDecoder(d2l.AttentionDecoder):
         return [enc_outputs, enc_valid_lens, [None] * self.num_layers]
 
     def forward(self, X, state):
+        # 位置编码
         X = self.pos_encoding(self.embedding(X) * math.sqrt(self.num_hiddens))
+        # 解码器块层
         self._attention_weights = [[None] * len(self.blks) for _ in range (2)]
         for i, blk in enumerate(self.blks):
             X, state = blk(X, state)
@@ -228,6 +230,7 @@ class TransformerDecoder(d2l.AttentionDecoder):
             self._attention_weights[0][i] = blk.attention1.attention.attention_weights
             # “编码器－解码器”自注意力权重
             self._attention_weights[1][i] = blk.attention2.attention.attention_weights
+        # 全连接层
         return self.dense(X), state
 
     @property

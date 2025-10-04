@@ -7,7 +7,9 @@ def init_plot(lr, title='Training loss vs Epoch'):
     fig, ax = plt.subplots(figsize=(10, 6))
     x_list = [] # x轴数据
     y_list = [] # y轴数据
+    # ax.plot() 返回的是一个列表（即使只画一条线）
     line, = ax.plot(x_list, y_list, 'b-', linewidth=2, label='Perplexity')
+    # line1, line2 = ax.plot(x, y1, 'b-', label='sin(x)', x, y2, 'r--', label='cos(x)')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('loss')
     ax.set_title(f'{title} (lr={lr})')
